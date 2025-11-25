@@ -13,7 +13,6 @@ app = FastAPI()
 USERS_DIR = "users"
 os.makedirs(USERS_DIR, exist_ok=True)
 
-
 class User(BaseModel):
     login: str
     password: str
@@ -21,7 +20,6 @@ class User(BaseModel):
     role: Union[str, None] = "basic role"
     token: Union[str, int, None] = "None"
     id: Union[int, None] = -1
-
 
 class LoginRequest(BaseModel):
     login: str
@@ -79,7 +77,7 @@ def compute_signature(token: str, body_bytes: bytes) -> str:
     return hashlib.sha256(token.encode() + body_bytes).hexdigest()
 
 @app.post("/users/auth")
-async def user_auth(request: LoginRequest):
+def user_auth(request: LoginRequest):
     for path in list_user():
         data = load_user(path)
         if data.get("login") == request.login and data.get("password") == request.password:
@@ -90,8 +88,8 @@ async def user_auth(request: LoginRequest):
 
 
 @app.post("/users/")
-async def user_create(request: Request, user: User):
-    body_bytes = await request.body()
+def user_create(request: Request, user: User):
+    body_bytes = request.body()
 
     auth_header = request.headers.get("authorization")
     signature_header = request.headers.get("signature")
