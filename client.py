@@ -3,6 +3,8 @@ import json
 import time
 from pydantic import BaseModel
 from typing import Union
+import hashlib
+import re
 
 class User(BaseModel):
     login: str
@@ -14,46 +16,105 @@ class User(BaseModel):
 
 SERVER_URL = "http://127.0.0.1:8000"
 
-def send_post(endpoint, data):
+def check_password(password: str):
+    if len(password) < 10:
+        return False, "Пароль должен быть не менее 10 символов."
+    if not re.search(r"[A-Z]", password):
+        return False, "Пароль должен содержать заглавную букву."
+    if not re.search(r"[a-z]", password):
+        return False, "Пароль должен содержать строчную букву."
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return False, "Пароль должен содержать спецсимвол."
+    return True, ""
+
+def compute_signature(token: str, body: dict):
+    if body is None:
+        body_bytes = b""
+    else:
+        body_bytes = json.dumps(body, separators=(',', ':')).encode()
+
+    if isinstance(token, int):
+        token = str(token)
+
+    return hashlib.sha256(token.encode() + body_bytes).hexdigest()
+
+def send_post(endpoint, data, auth_token=None):
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = auth_token
+        headers["signature"] = compute_signature(auth_token, data)
+
     try:
-        response = requests.post(f"{SERVER_URL}{endpoint}", json=data)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Ошибка запроса: {e}")
+        resp = requests.post(SERVER_URL + endpoint, json=data, headers=headers)
+        try:
+            j = resp.json()
+        except:
+            j = None
+
+        if resp.status_code >= 400:
+            if j and "detail" in j:
+                print(f"Ошибка {resp.status_code}: {j['detail']}")
+            else:
+                print(f"Ошибка {resp.status_code}: {resp.text}")
+            return None
+
+        return j
+    except Exception as e:
+        print("Ошибка запроса:", e)
         return None
 
-def send_get(endpoint, headers=None):
+
+def send_get(endpoint, auth_token=None, params=None):
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = auth_token
+        headers["signature"] = compute_signature(auth_token, None)
+
     try:
-        response = requests.get(f"{SERVER_URL}{endpoint}", headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Ошибка запроса: {e}")
+        resp = requests.get(SERVER_URL + endpoint, headers=headers, params=params)
+        try:
+            j = resp.json()
+        except:
+            j = None
+
+        if resp.status_code >= 400:
+            if j and "detail" in j:
+                print(f"Ошибка {resp.status_code}: {j['detail']}")
+            else:
+                print(f"Ошибка {resp.status_code}: {resp.text}")
+            return None
+
+        return j
+    except Exception as e:
+        print("Ошибка запроса:", e)
         return None
 
 def login():
-    login_input = input("Введите login (или 'exit' для выхода): ").strip()
-    if login_input == "exit":
-        return None
-    password_input = input("Введите password: ").strip()
-    
-    data = {"login": login_input, "password": password_input}
-    result = send_post("/users/auth", data)
-    if result and "token" in result:
-        print(f"Авторизация успешна! Login: {login_input}, Токен: {result['token']}")
-        return {"login": login_input, "token": result["token"]}
-    else:
-        print("Неверный login или password.")
-        return None
+    login = input("Введите login: ")
+    password = input("Введите пароль: ")
+
+    res = send_post("/users/auth", {"login": login, "password": password})
+    if res:
+        print("Авторизация успешна!")
+        return {"login": login, "token": res["token"]}
+    print("Ошибка авторизации.")
+    return None
+
 
 def register():
     login = input("Введите login: ")
-    password = input("Введите password: ")
-    password_confirmation = input("Подтвердите password: ")
+    password = input("Введите пароль: ")
+    password_confirmation = input("Подтвердите пароль: ")
+
     if password != password_confirmation:
-        print("Пароли не совпадают!")
+        print("Пароли не совпадают.")
         return
+
+    ok, msg = check_password(password)
+    if not ok:
+        print("Ошибка:", msg)
+        return
+
     data = {
         "login": login,
         "password": password,
@@ -61,82 +122,73 @@ def register():
         "role": "basic role",
         "token": "None"
     }
-    result = send_post("/users/", data)
-    if result:
-        print(f"Регистрация успешна! ID: {result.get('id')}. Теперь авторизуйтесь.")
+
+    res = send_post("/users/", data)
+    if res:
+        print("Регистрация успешна!")
     else:
         print("Ошибка регистрации.")
 
+
 def create_user(current_user):
-    login = input("Введите login: ")
-    password = input("Введите password: ")
-    password_confirmation = input("Подтвердите password: ")
+    login = input("Введите login нового пользователя: ")
+    password = input("Введите пароль: ")
+    password_confirmation = input("Подтвердите пароль: ")
+
     if password != password_confirmation:
-        print("Пароли не совпадают!")
+        print("Пароли не совпадают.")
         return
-    role = input("Введите role (по умолчанию 'basic role'): ") or "basic role"
-    token = input("Введите token (по умолчанию 'None'): ") or "None"
-    
+
+    ok, msg = check_password(password)
+    if not ok:
+        print("Ошибка:", msg)
+        return
+
+    role = input("Роль (или Enter): ") or "basic role"
+    token_for_new = "None"
+
     data = {
         "login": login,
         "password": password,
         "password_confirmation": password_confirmation,
         "role": role,
-        "token": token
+        "token": token_for_new
     }
-    headers = {"Authorization": f"{current_user['token']}"}
-    try:
-        response = requests.post(f"{SERVER_URL}/users/", json=data, headers=headers)
-        response.raise_for_status()
-        result = response.json()
-        print(f"Пользователь создан с ID: {result.get('id')}")
-    except requests.exceptions.RequestException as e:
-        print(f"Ошибка: {e}. Возможно, доступ запрещён.")
+
+    res = send_post("/users/", data, auth_token=current_user["token"])
+    if res:
+        print("Пользователь создан:", res)
+    else:
+        print("Ошибка создания пользователя.")
+
 
 def all_users(current_user):
-    headers = {"Authorization": f"{current_user['token']}"}
-    try:
-        response = requests.get(f"{SERVER_URL}/users/", headers=headers)
-        response.raise_for_status()
-        result = response.json()
-        if isinstance(result, list):
-            for user_data in result:
-                user = User(**user_data)
-                print(f"ID: {user.id}, Login: {user.login}, Role: {user.role}")
-        else:
-            print("Ошибка получения списка.")
-    except requests.exceptions.RequestException as e:
-        print(f"Ошибка: {e}. Возможно, доступ запрещён.")
+    user_id = input("Введите ID пользователя: ")
+
+    res = send_get(f"/users/{user_id}", auth_token=current_user["token"], params={"q": 2, "a": 3})
+    if res:
+        print("Результат:", res)
+
 
 def main():
-    current_user = None
+    current = None
     while True:
-        print("\nДоступные команды:")
-        print("1 - Создать пользователя")
-        print("2 - Просмотреть всех пользователей")
-        print("3 - Регистрация")
-        print("4 - Авторизация")
-        print("exit - Полный выход")
-        command = input("Введите команду: ").strip()
-        
-        if command == "1":
-            if not current_user:
-                print("Сначала авторизуйтесь.")
-            else:
-                create_user(current_user)
-        elif command == "2":
-            if not current_user:
-                print("Сначала авторизуйтесь.")
-            else:
-                all_users(current_user)
-        elif command == "3":
+        print("\nКоманды:")
+        print("1 - Регистрация")
+        print("2 - Авторизация")
+        print("exit - выход")
+
+        cmd = input("> ")
+
+        if cmd == "1":
             register()
-        elif command == "4":
-            current_user = login()
-            if not current_user:
-                print("Авторизация отменена.")
-        elif command == "exit":
+
+        elif cmd == "2":
+            current = login()
+
+        elif cmd == "exit":
             break
+
         else:
             print("Неизвестная команда.")
 
