@@ -6,6 +6,7 @@ import time
 import os
 import random
 import re
+import hashlib
 
 app = FastAPI()
 USERS_DIR = "users"
@@ -15,7 +16,8 @@ class User(BaseModel):
     password: str
     password_confirmation: str
     role: Union[str, None] = "basic role"
-    token: Union[str, int, None] = "None"
+    tech_token: Union[str, int, None] = "None"
+    sesion_token: Union[str, int, None] = "None"
     id: Union[int, None] = -1
 
 class LoginRequest(BaseModel):
@@ -38,11 +40,13 @@ def find_user_login(login: str):
 
 def validate_token(token: str) -> bool:
     for path in list_user():
-        u = load_user(path)
-        if u.get("token") == token:
+        name = load_user(path)
+        if name.get("sesion_token") and name.get("sesion_token") == token:
             return True
+        # if name.get("token") and name.get("token") == token: если не удалю старые вернуть
+        #     return True
     return False
-    
+
 def check_password(password: str):
     if len(password) < 10:
         return False, "Пароль должен быть не менее 10 символов."
@@ -52,7 +56,7 @@ def check_password(password: str):
         return False, "В пароле должна быть хотя бы одна строчная буква."
     if not re.search(r"[^A-Za-z0-9]", password):
         return False, "В пароле должен быть хотя бы один специальный символ."
-    return True, ""    
+    return True, ""
 
 def get_current_user_token(authorization: str = Header(None)):
     if not authorization:
@@ -63,17 +67,19 @@ def get_current_user_token(authorization: str = Header(None)):
 
 @app.post("/users/auth")
 def user_auth(request: LoginRequest):
-    json_files_names = [file for file in os.listdir('users/') if file.endswith('.json')]
+    json_files_names = [file for file in os.listdir(USERS_DIR) if file.endswith('.json')]
     for json_file_name in json_files_names:
-        file_path = os.path.join('users/', json_file_name)
+        file_path = os.path.join(USERS_DIR, json_file_name)
         with open(file_path, 'r') as f:
             json_user = json.load(f)
             user = User(**json_user)
             if user.login == request.login and user.password == request.password:
-                user.token = hex(random.getrandbits(128))[2:]
-                with open(file_path, 'w') as f:
-                    json.dump(user.model_dump(), f)
-                return {"login": user.login, "token": user.token}
+                user.sesion_token = hashlib.sha256(
+                    str(random.getrandbits(128) + int(time.time())).encode()
+                ).hexdigest()
+                with open(file_path, 'w') as fw:
+                    json.dump(user.model_dump(), fw)
+                return {"login": user.login, "token": user.sesion_token}
     raise HTTPException(status_code=401, detail="Неправильный пароль или логин.")
 
 @app.get("/")
@@ -83,7 +89,8 @@ def read_root(token: str = Depends(get_current_user_token)):
 @app.post("/users/")
 def user_create(user: User):
     user.id = int(time.time())
-    user.token = random.getrandbits(128) + int(time.time())
+    user.tech_token = str(random.getrandbits(128) + int(time.time()))
+    user.sesion_token = None
     if user.password != user.password_confirmation:
         raise HTTPException(status_code=400, detail="Пароль и подтверждение не совпадают.")
 
@@ -94,21 +101,21 @@ def user_create(user: User):
     if find_user_login(user.login):
         raise HTTPException(status_code=409, detail="Такой login уже существует.")
 
-    with open (f"users/user_{user.id}.json","w") as f:
+    with open(os.path.join(USERS_DIR, f"user_{user.id}.json"), "w") as f:
         json.dump(user.model_dump(), f)
     return user
 
 @app.get("/users/{user_id}")
 def user_read(user_id: int, q: Union[int, None] = 0, a : Union[int, None] = 0, token: str = Depends(get_current_user_token)):
-    sum = q + a
-    return {"user_id": user_id, "q": q, "a": a, "sum": sum}
+    total = q + a
+    return {"user_id": user_id, "q": q, "a": a, "sum": total}
 
 @app.get("/users")
 def all_users(token: str = Depends(get_current_user_token)):
-    json_files_names = [file for file in os.listdir('users/') if file.endswith(".json")]
+    json_files_names = [file for file in os.listdir(USERS_DIR) if file.endswith(".json")]
     data = []
     for json_file_name in json_files_names:
-        file_path = os.path.join('users/', json_file_name)
+        file_path = os.path.join(USERS_DIR, json_file_name)
         with open(file_path, 'r') as f:
             data.append(json.load(f))
     return data
