@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from pydantic import BaseModel
 from typing import Union
 import json
@@ -6,6 +6,7 @@ import time
 import os
 import random
 import re
+import requests
 
 app = FastAPI()
 USERS_DIR = "users"
@@ -31,10 +32,17 @@ def load_user(path):
 
 def find_user_login(login: str):
     for path in list_user():
-        u = load_user(path)
-        if u.get("login") == login:
+        name = load_user(path)
+        if name.get("login") == login:
             return path
     return None
+
+def validate_token(token: str) -> bool:
+    for path in list_user():
+        u = load_user(path)
+        if u.get("token") == token:
+            return True
+    return False
     
 def check_password(password: str):
     if len(password) < 10:
@@ -47,6 +55,13 @@ def check_password(password: str):
         return False, "В пароле должен быть хотя бы один специальный символ."
     return True, ""    
 
+def get_current_user_token(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Токен не предоставлен")
+    if not validate_token(authorization):
+        raise HTTPException(status_code=401, detail="Неверный токен")
+    return authorization
+
 @app.post("/users/auth")
 def user_auth(request: LoginRequest):
     json_files_names = [file for file in os.listdir('users/') if file.endswith('.json')]
@@ -57,11 +72,13 @@ def user_auth(request: LoginRequest):
             user = User(**json_user)
             if user.login == request.login and user.password == request.password:
                 user.token = hex(random.getrandbits(128))[2:]
+                with open(file_path, 'w') as f:
+                    json.dump(user.model_dump(), f)
                 return {"login": user.login, "token": user.token}
     raise HTTPException(status_code=401, detail="Неправильный пароль или логин.")
 
 @app.get("/")
-def read_root():
+def read_root(token: str = Depends(get_current_user_token)):
     return {"message": "Добро пожаловать!"}
 
 @app.post("/users/")
@@ -83,6 +100,16 @@ def user_create(user: User):
     return user
 
 @app.get("/users/{user_id}")
-def user_read(user_id: int, q: Union[int, None] = 0, a : Union[int, None] = 0):
+def user_read(user_id: int, q: Union[int, None] = 0, a : Union[int, None] = 0, token: str = Depends(get_current_user_token)):
     sum = q + a
     return {"user_id": user_id, "q": q, "a": a, "sum": sum}
+
+@app.get("/users")
+def all_users(token: str = Depends(get_current_user_token)):
+    json_files_names = [file for file in os.listdir('users/') if file.endswith(".json")]
+    data = []
+    for json_file_name in json_files_names:
+        file_path = os.path.join('users/', json_file_name)
+        with open(file_path, 'r') as f:
+            data.append(json.load(f))
+    return data

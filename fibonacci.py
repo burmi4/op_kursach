@@ -1,11 +1,10 @@
 def fibonacci(n):
-    a, b = 0, 1
-    count = 0
-    while count < n:
-        yield a
-        a, b = b, a + b
-        count += 1
-
-func = fibonacci(10)
-for i in func:
-    print(i)
+    if n <= 0:
+        return 0
+    elif n == 1 or n == 2:
+        return 1
+    else:
+        return fibonacci(n - 1) + fibonacci(n - 2)
+for i in range(1,16):
+    func = fibonacci(i)
+    print(func)
