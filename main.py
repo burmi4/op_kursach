@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import Union
 import json
@@ -6,7 +6,6 @@ import time
 import os
 import random
 import re
-import requests
 
 app = FastAPI()
 USERS_DIR = "users"
@@ -84,7 +83,7 @@ def read_root(token: str = Depends(get_current_user_token)):
 @app.post("/users/")
 def user_create(user: User):
     user.id = int(time.time())
-    user.token = random.getrandbits(128)
+    user.token = random.getrandbits(128) + int(time.time())
     if user.password != user.password_confirmation:
         raise HTTPException(status_code=400, detail="Пароль и подтверждение не совпадают.")
 
