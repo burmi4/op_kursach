@@ -43,7 +43,7 @@ def sig_token_plus_time(token: str, ts: Optional[int] = None) -> Dict[str, str]:
         ts = int(time.time())
     msg = f"{token}{ts}".encode("utf-8")
     signature = hashlib.sha256(msg).hexdigest()
-    return {"Authorization": signature, "X-Timestamp": str(ts)}
+    return {"Authorization": signature}
 
 def sig_token_plus_body(token: str, body: Optional[dict]) -> Dict[str, str]:
     body_str = serialize_body(body)
@@ -57,7 +57,7 @@ def sig_token_body_and_time(token: str, body: Optional[dict], ts: Optional[int] 
     body_str = serialize_body(body)
     msg = (token + body_str + str(ts)).encode("utf-8")
     signature = hashlib.sha256(msg).hexdigest()
-    return {"Authorization": signature, "X-Timestamp": str(ts)}
+    return {"Authorization": signature}
 
 def build_signature_headers(method: str, endpoint: str, body: Optional[dict], tech_token: str):
     body_json = serialize_body(body)
@@ -71,7 +71,8 @@ def send_post(endpoint, data, session_token=None, tech_token=None, extra_headers
     if session_token:
         headers["Authorization"] = session_token
     if tech_token and session_token:
-        headers.update(build_signature_headers("POST", endpoint, data, tech_token))
+        sig_headers = sig_token_plus_body(tech_token, data)
+        headers["X-Signature"] = sig_headers["Authorization"]
     try:
         response = requests.post(url, json=data, headers=headers)
         response.raise_for_status()
@@ -90,7 +91,8 @@ def send_get(endpoint, session_token=None, tech_token=None, extra_headers=None):
     if session_token:
         headers["Authorization"] = session_token
     if tech_token and session_token:
-        headers.update(build_signature_headers("GET", endpoint, {}, tech_token))
+        sig_headers = sig_token_plus_body(tech_token, {})
+        headers["X-Signature"] = sig_headers["Authorization"]
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()

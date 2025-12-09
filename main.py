@@ -24,6 +24,38 @@ class User(BaseModel):
 class LoginRequest(BaseModel):
     login: str
     password: str
+    
+def verify_request_signature(request: Request,
+                                   authorization: str = Header(None),
+                                   x_signature: str = Header(None, alias="X-Signature")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Токен не предоставлен (Authorization).")
+    path, user_json = find_user_by_session_token(authorization)
+    if not path:
+        raise HTTPException(status_code=401, detail="Неверный session token.")
+    if not x_signature:
+        raise HTTPException(status_code=401, detail="Требуется заголовок X-Signature.")
+
+    body_bytes = request.body()  # Читаем сырое тело
+    body_str = body_bytes.decode("utf-8") if body_bytes else ""
+    body_json = json.loads(body_str) if body_str else None
+    body_str_normalized = serialize_body(body_json)
+
+    tech = user_json.get("tech_token")
+    if not tech:
+        raise HTTPException(status_code=401, detail="У пользователя нет tech_token для проверки подписи.")
+    
+    msg = (tech + body_str_normalized).encode("utf-8")
+    expected_signature = hashlib.sha256(msg).hexdigest()
+    
+    if not hmac.compare_digest(expected_signature, x_signature):
+        raise HTTPException(status_code=401, detail="Неверная подпись запроса (X-Signature).")
+    return authorization
+    
+def serialize_body(body: Optional[dict]) -> str:
+    if not body:
+        return ""
+    return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))    
 
 def list_user_files():
     if not os.path.exists(USERS_DIR):
@@ -89,39 +121,12 @@ def user_auth(request: LoginRequest):
                 return {"login": json_user.get("login"), "token": session_token, "tech_token": json_user.get("tech_token")}
     raise HTTPException(status_code=401, detail="Неправильный логин или пароль.")
 
-def verify_request_signature(request: Request,
-                                   authorization: str = Header(None),
-                                   x_signature: str = Header(None, alias="X-Signature")):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Токен не предоставлен (Authorization).")
-    path, user_json = find_user_by_session_token(authorization)
-    if not path:
-        raise HTTPException(status_code=401, detail="Неверный session token.")
-    if not x_signature:
-        raise HTTPException(status_code=401, detail="Требуется заголовок X-Signature.")
-
-    body_bytes = request.body()
-    body_str = body_bytes.decode("utf-8") if body_bytes else ""
-
-    raw_path = request.url.path
-    query = request.url.query
-    path_with_query = raw_path + (f"?{query}" if query else "")
-
-    message = f"{request.method}\n{path_with_query}\n{body_str}"
-    tech = user_json.get("tech_token")
-    if not tech:
-        raise HTTPException(status_code=401, detail="У пользователя нет tech_token для проверки подписи.")
-    expected_hmac = hmac.new(tech.encode(), message.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected_hmac, x_signature):
-        raise HTTPException(status_code=401, detail="Неверная подпись запроса (X-Signature).")
-    return authorization
-
 @app.get("/")
-async def read_root(token: str = Depends(verify_request_signature)):
+def read_root(token: str = Depends(verify_request_signature)):
     return {"message": "Добро пожаловать!"}
 
 @app.get("/users")
-async def all_users(token: str = Depends(verify_request_signature)):
+def all_users(token: str = Depends(verify_request_signature)):
     data = []
     for path in list_user_files():
         with open(path, "r", encoding="utf-8") as f:
@@ -129,6 +134,6 @@ async def all_users(token: str = Depends(verify_request_signature)):
     return data
 
 @app.get("/users/{user_id}")
-async def user_read(user_id: int, q: Union[int, None] = 0, a : Union[int, None] = 0, token: str = Depends(verify_request_signature)):
+def user_read(user_id: int, q: Union[int, None] = 0, a : Union[int, None] = 0, token: str = Depends(verify_request_signature)):
     total = q + a
     return {"user_id": user_id, "q": q, "a": a, "sum": total}
