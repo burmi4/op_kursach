@@ -18,11 +18,9 @@ from fastapi.staticfiles import StaticFiles
 app = FastAPI()
 
 app.mount("/images", StaticFiles(directory="images"), name="images")
-if not os.path.exists("images"):
-    os.makedirs("images")
 
 USERS_DIR = "users"
-SERVER_URL = "http://127.0.0.1:8000"  # Для генерации ссылок
+SERVER_URL = "http://127.0.0.1:8000"
 
 class User(BaseModel):
     login: str
