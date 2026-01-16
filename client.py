@@ -6,8 +6,6 @@ import hashlib
 from pydantic import BaseModel
 from typing import Union, Optional
 import re
-import os
-from typing import Dict
 
 class User(BaseModel):
     login: str
@@ -30,32 +28,32 @@ def check_password(password: str):
         return False, "Пароль должен содержать спецсимвол."
     return True, ""
 
-def serialize_body(body: Optional[dict]) -> str:
+def serialize_body(body: Optional[dict]):
     if not body:
         return ""
     return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
-def sig_plain_token(token: str) -> Dict[str, str]:
+def sig_plain_token(token: str):
     return {"Authorization": token}
 
-def sig_token_plus_time(token: str, ts: Optional[int] = None) -> Dict[str, str]:
-    if ts is None:
-        ts = int(time.time())
-    msg = f"{token}{ts}".encode("utf-8")
+def sig_token_plus_time(token: str, time: Optional[int] = None):
+    if time is None:
+        time = int(time.time())
+    msg = f"{token}{time}".encode("utf-8")
     signature = hashlib.sha256(msg).hexdigest()
     return {"Authorization": signature}
 
-def sig_token_plus_body(token: str, body: Optional[dict]) -> Dict[str, str]:
+def sig_token_plus_body(token: str, body: Optional[dict]):
     body_str = serialize_body(body)
     msg = (token + body_str).encode("utf-8")
     signature = hashlib.sha256(msg).hexdigest()
     return {"Authorization": signature}
 
-def sig_token_body_and_time(token: str, body: Optional[dict], ts: Optional[int] = None) -> Dict[str, str]:
-    if ts is None:
-        ts = int(time.time())
+def sig_token_body_and_time(token: str, body: Optional[dict], time: Optional[int] = None):
+    if time is None:
+        time = int(time.time())
     body_str = serialize_body(body)
-    msg = (token + body_str + str(ts)).encode("utf-8")
+    msg = (token + body_str + str(time)).encode("utf-8")  
     signature = hashlib.sha256(msg).hexdigest()
     return {"Authorization": signature}
 
@@ -135,10 +133,8 @@ def login():
     if response and response.status_code == 200:
         result = response.json()
         if "token" in result:
-            print(f"Авторизация успешна! Login: {login_input}, Сессионный токен: {result['token']}")
+            print(f"Авторизация успешна! Login: {login_input}")
             tech = result.get("tech_token")
-            if tech:
-                print("Получен tech_token (секрет для подписи запросов).")
             return {"login": login_input, "token": result["token"], "tech_token": tech}
         else:
             print("Неверный login или password.")
@@ -170,7 +166,7 @@ def register():
     response = send_post("/users/", data)
     if response and response.status_code == 200:
         result = response.json()
-        print(f"Регистрация успешна! ID: {result.get('id')}. Tech token: {result.get('tech_token')}. Теперь авторизуйтесь.")
+        print(f"Регистрация успешна! ID: {result.get('id')}. Tech token: {result.get('tech_token')}.")
     else:
         print("Ошибка регистрации.")
         try:
@@ -181,121 +177,99 @@ def register():
 def authenticated_menu(session_token, tech_token):
     while True:
         print("\nАвторизованные команды:")
-        print("1 - Получить всех пользователей")
-        print("2 - Получить пользователя по ID")
-        print("3 - Получить список N простых чисел")
-        print("4 - Получить визуализацию последовательности Фибоначчи до N")
-        print("5 - Получить историю запросов")
-        print("6 - Удалить историю запросов")
-        print("7 - Изменить пароль")
+        print("1 - Получить список N простых чисел")
+        print("2 - Получить визуализацию последовательности Фибоначчи до N")
+        print("3 - Получить историю запросов")
+        print("4 - Удалить историю запросов")
+        print("5 - Изменить пароль")
         print("exit - выход в главное меню")
 
-        cmd = input("> ")
+        try:
+            cmd = input("> ")
 
-        if cmd == "1":
-            response = send_get("/users", session_token=session_token, tech_token=tech_token)
-            if response and response.status_code == 200:
-                print("Все пользователи:", json.dumps(response.json(), indent=2, ensure_ascii=False))
-            else:
-                print("Ошибка доступа.")
-                try:
-                    print("Response text:", response.text)
-                except:
-                    pass
-
-        elif cmd == "2":
-            user_id = input("Введите user_id: ")
-            response = send_get(f"/users/{user_id}", session_token=session_token, tech_token=tech_token)
-            if response and response.status_code == 200:
-                print("Пользователь:", json.dumps(response.json(), indent=2, ensure_ascii=False))
-            else:
-                print("Ошибка доступа.")
-                try:
-                    print("Response text:", response.text)
-                except:
-                    pass
-
-        elif cmd == "3":
-            n = int(input("Введите N: "))
-            data = {"n": n}
-            response = send_post("/primes", data, session_token=session_token, tech_token=tech_token)
-            if response and response.status_code == 200:
-                print("Простые числа:", response.json()["primes"])
-            else:
-                print("Ошибка.")
-                try:
-                    print("Response text:", response.text)
-                except:
-                    pass
-
-        elif cmd == "4":
-            n = int(input("Введите N: "))
-            format_ = input("Введите формат (link, base64, binary, text): ").strip()
-            data = {"n": n, "format": format_}
-            response = send_post("/fibvis", data, session_token=session_token, tech_token=tech_token)
-            if response and response.status_code == 200:
-                if format_ == "binary":
-                    with open("fibvis.png", "wb") as f:
-                        f.write(response.content)
-                    print("Изображение сохранено в fibvis.png")
+            if cmd == "1":
+                n = int(input("Введите N: "))
+                data = {"n": n}
+                response = send_post("/primes", data, session_token=session_token, tech_token=tech_token)
+                if response and response.status_code == 200:
+                    print("Простые числа:", response.json()["primes"])
                 else:
+                    print("Ошибка.")
+                    try:
+                        print("Response text:", response.text)
+                    except:
+                        pass
+
+            elif cmd == "2":
+                n = int(input("Введите N: "))
+                format_ = input("Введите формат (link, base64, binary, text): ").strip()
+                data = {"n": n, "format": format_}
+                response = send_post("/fibvis", data, session_token=session_token, tech_token=tech_token)
+                if response and response.status_code == 200:
+                    if format_ == "binary":
+                        with open("fibvis.png", "wb") as f:
+                            f.write(response.content)
+                        print("Изображение сохранено в fibvis.png")
+                    else:
+                        js = response.json()
+                        if format_ == "link":
+                            print("Ссылка:", js["link"])
+                        elif format_ == "base64":
+                            print("Base64:", js["base64"])
+                        elif format_ == "text":
+                            print("Текст:\n", js["text"])
+                else:
+                    print("Ошибка.")
+                    try:
+                        print("Response text:", response.text)
+                    except:
+                        pass
+
+            elif cmd == "3":
+                response = send_get("/history", session_token=session_token, tech_token=tech_token)
+                if response and response.status_code == 200:
+                    print("История запросов:", json.dumps(response.json(), indent=2, ensure_ascii=False))
+                else:
+                    print("Ошибка.")
+                    try:
+                        print("Response text:", response.text)
+                    except:
+                        pass
+
+            elif cmd == "4":
+                response = send_delete("/history", session_token=session_token, tech_token=tech_token)
+                if response and response.status_code == 200:
+                    print(response.json()["message"])
+                else:
+                    print("Ошибка.")
+                    try:
+                        print("Response text:", response.text)
+                    except:
+                        pass
+
+            elif cmd == "5":
+                new_password = input("Введите новый password: ")
+                password_confirmation = input("Подтвердите password: ")
+                data = {"new_password": new_password, "password_confirmation": password_confirmation}
+                response = send_patch("/users/password", data, session_token=session_token, tech_token=tech_token)
+                if response and response.status_code == 200:
                     js = response.json()
-                    if format_ == "link":
-                        print("Ссылка:", js["link"])
-                    elif format_ == "base64":
-                        print("Base64:", js["base64"])
-                    elif format_ == "text":
-                        print("Текст:\n", js["text"])
-            else:
-                print("Ошибка.")
-                try:
-                    print("Response text:", response.text)
-                except:
-                    pass
+                    print(js["message"])
+                    print("Технический токен изменен. Пожалуйста, авторизуйтесь заново для получения нового токена.")
+                    break
+                else:
+                    print("Ошибка.")
+                    try:
+                        print("Response text:", response.text)
+                    except:
+                        pass
 
-        elif cmd == "5":
-            response = send_get("/history", session_token=session_token, tech_token=tech_token)
-            if response and response.status_code == 200:
-                print("История запросов:", json.dumps(response.json(), indent=2, ensure_ascii=False))
-            else:
-                print("Ошибка.")
-                try:
-                    print("Response text:", response.text)
-                except:
-                    pass
-
-        elif cmd == "6":
-            response = send_delete("/history", session_token=session_token, tech_token=tech_token)
-            if response and response.status_code == 200:
-                print(response.json()["message"])
-            else:
-                print("Ошибка.")
-                try:
-                    print("Response text:", response.text)
-                except:
-                    pass
-
-        elif cmd == "7":
-            new_password = input("Введите новый password: ")
-            password_confirmation = input("Подтвердите password: ")
-            data = {"new_password": new_password, "password_confirmation": password_confirmation}
-            response = send_patch("/users/password", data, session_token=session_token, tech_token=tech_token)
-            if response and response.status_code == 200:
-                js = response.json()
-                print(js["message"])
-                print("Технический токен изменен. Пожалуйста, авторизуйтесь заново для получения нового токена.")
+            elif cmd == "exit":
                 break
             else:
-                print("Ошибка.")
-                try:
-                    print("Response text:", response.text)
-                except:
-                    pass
-
-        elif cmd == "exit":
-            break
-        else:
-            print("Неизвестная команда.")
+                print("Неизвестная команда.")
+        except Exception as X:
+            print(X)
 
 def main():
     current = None
