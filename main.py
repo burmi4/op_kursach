@@ -18,7 +18,6 @@ import base64
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-
 app = FastAPI()
 
 app.mount("/images", StaticFiles(directory="images"), name="images")
@@ -82,7 +81,7 @@ async def verify_request_signature(request: Request,
 def serialize_body(body: Optional[dict]):
     if not body:
         return ""
-    return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",",":"))
 
 def list_user_files():
     if not os.path.exists(USERS_DIR):
@@ -142,52 +141,19 @@ def generate_fib_image(seq, n):
     y = np.array(seq)
     fig, ax = plt.subplots(figsize=(12, 7))
     ax.scatter(x, y, c=y, cmap='viridis', s=150, edgecolors='black', zorder=3)
-    for xi, yi in zip(x, y):
-        ax.text(xi, yi + (max(y)*0.02), f"{yi}", ha="center", fontsize=9)
-    ax.axis('off') 
+    ax.set_xlabel("Номер элемента (n)")
+    ax.set_ylabel("Значение") 
     buf = BytesIO()
     plt.savefig(buf, format="png", dpi=120, bbox_inches="tight") 
     plt.close(fig)
     return buf.getvalue()
+
 
 def generate_fib_text(seq):
     s = "Запаздывающий генератор Фибоначчи:\n"
     for i, val in enumerate(seq):
         s += f"{i+1}: {val}\n"
     return s
-
-def is_prime(num):
-    if num < 2:
-        return False
-    if num == 2:
-        return True
-    if num % 2 == 0:
-        return False
-    i = 3
-    while i * i <= num:
-        if num % i == 0:
-            return False
-        i += 2
-    return True
-
-def generate_primes(n):
-    if n <= 0:
-        return []
-
-    fib_numbers = fibonacci_sequence(n * 20)
-
-    primes = []
-    seen = set()
-
-    for value in fib_numbers:
-        ogr = abs(value) % 10_000 + 2
-        if ogr not in seen and is_prime(ogr):
-            primes.append(ogr)
-            seen.add(ogr)
-            if len(primes) == n:
-                break
-
-    return primes
 
 @app.post("/users/")
 def user_create(user: User):
@@ -269,17 +235,27 @@ def change_password(body: dict, token: str = Depends(verify_request_signature)):
         json.dump(user, f, ensure_ascii=False)
     return {"message": "Password changed", "new_tech_token": new_tech}
 
-@app.post("/primes")
-def get_primes(body: dict, token: str = Depends(verify_request_signature)):
-    if "n" not in body:
-        raise HTTPException(status_code=400, detail="n обязательно")
+@app.post("/fibrange")
+def get_fibrange(body: dict, token: str = Depends(verify_request_signature)):
+    if "a" not in body or "b" not in body:
+        raise HTTPException(status_code=400, detail="Обязательные поля: a и b")
+    a = body["a"]
+    b = body["b"]
+    if not (isinstance(a, int) and isinstance(b, int)):
+        raise HTTPException(status_code=400, detail="a и b должны быть целыми числами")
+    if a < 0 or b < 0:
+        raise HTTPException(status_code=400, detail="a и b должны быть положительными")
+    maxi_b = 200000000
+    if b > maxi_b:
+        raise HTTPException(
+        status_code=400,
+        detail=f"b слишком большое, максимум {maxi_b}")
+    if b < a:
+        raise HTTPException(status_code=400, detail="b должен быть >= a")
 
-    if not isinstance(body["n"], int) or body["n"] <= 0:
-        raise HTTPException(status_code=400, detail="n должно быть положительным целым числом")
-
-    primes = generate_primes(body["n"])
-    return {"primes": primes}
-
+    seq = fibonacci_sequence(b)
+    values = seq[a-1:b]
+    return {"a": a, "b": b, "values": values}
 
 @app.post("/fibvis")
 def get_fibvis(body: dict, request: Request, token: str = Depends(verify_request_signature)):
