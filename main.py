@@ -214,7 +214,7 @@ def delete_history(token: str = Depends(verify_request_signature)):
     user["history"] = []
     with open(path, "w", encoding="utf-8") as f:
         json.dump(user, f, ensure_ascii=False)
-    return {"message": "History deleted"}
+    return {"message": "История удалена"}
 
 @app.patch("/users/password")
 def change_password(body: dict, token: str = Depends(verify_request_signature)):
@@ -239,23 +239,39 @@ def change_password(body: dict, token: str = Depends(verify_request_signature)):
 def get_fibrange(body: dict, token: str = Depends(verify_request_signature)):
     if "a" not in body or "b" not in body:
         raise HTTPException(status_code=400, detail="Обязательные поля: a и b")
+
     a = body["a"]
     b = body["b"]
-    if not (isinstance(a, int) and isinstance(b, int)):
+
+    if not isinstance(a, int) or not isinstance(b, int):
         raise HTTPException(status_code=400, detail="a и b должны быть целыми числами")
+
     if a < 0 or b < 0:
-        raise HTTPException(status_code=400, detail="a и b должны быть положительными")
-    maxi_b = 200000000
-    if b > maxi_b:
-        raise HTTPException(
-        status_code=400,
-        detail=f"b слишком большое, максимум {maxi_b}")
+        raise HTTPException(status_code=400, detail="a и b должны быть неотрицательными")
+
     if b < a:
         raise HTTPException(status_code=400, detail="b должен быть >= a")
 
-    seq = fibonacci_sequence(b)
-    values = seq[a-1:b]
-    return {"a": a, "b": b, "values": values}
+    maxi_b = 20000000
+    if b > maxi_b:
+        raise HTTPException(
+            status_code=400,
+            detail=f"b слишком большое, максимум {maxi_b}"
+        )
+    values = []
+    f1, f2 = 0, 1
+
+    while f2 <= b:
+        if f2 >= a:
+            values.append(f2)
+        f1, f2 = f2, f1 + f2
+
+    return {
+        "a": a,
+        "b": b,
+        "values": values
+    }
+
 
 @app.post("/fibvis")
 def get_fibvis(body: dict, request: Request, token: str = Depends(verify_request_signature)):
@@ -266,7 +282,7 @@ def get_fibvis(body: dict, request: Request, token: str = Depends(verify_request
     if not isinstance(n, int) or n <= 0:
         raise HTTPException(status_code=400, detail="n должно быть положительным целым числом")
     if format_ not in ["link", "base64", "binary", "text"]:
-        raise HTTPException(status_code=400, detail="Invalid format")
+        raise HTTPException(status_code=400, detail="Неправильный формат")
     seq = fibonacci_sequence(n)
     
     if format_ == "text":

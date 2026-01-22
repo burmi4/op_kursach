@@ -140,7 +140,7 @@ def login():
 
 def register():
     login = input("Введите login: ")
-    password = input("Введите password: ")
+    password = input("Введите password (необходимы: 10+ символов, спецсимвол, заглавные буква): ")
     password_confirmation = input("Подтвердите password: ")
     if password != password_confirmation:
         print("Пароли не совпадают!")
@@ -168,7 +168,7 @@ def authenticated_menu(session_token, tech_token):
     while True:
         print("\nАвторизованные команды:")
         print("1 - Получить числа запаздывающего генератора Фибоначчи в диапазоне [a, b]")
-        print("2 - Получить визуализацию последовательности Фибоначчи до N")
+        print("2 - Получить визуализацию генератора Фибоначчи до N")
         print("3 - Получить историю запросов")
         print("4 - Удалить историю запросов")
         print("5 - Изменить пароль")
@@ -209,7 +209,7 @@ def authenticated_menu(session_token, tech_token):
                             if format_ == "link":
                                 print("Ссылка:", js["link"])
                             elif format_ == "base64":
-                                print("Base64:", js["base64"][:50] + "...") 
+                                print("Base64:", js["base64"]) 
                             elif format_ == "text":
                                 print("Текст:\n", js["text"])
                     elif response is not None:
